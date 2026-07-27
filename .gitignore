@@ -12,6 +12,16 @@ data/
 *.zip
 *.tar.gz
 
+# Ảnh
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.svg
+*.webp
+*.bmp
+*.ico
+
 # Trained Models (Những file quá lớn)
 runs/
 *.pth
