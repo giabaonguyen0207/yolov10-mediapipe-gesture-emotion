@@ -1,0 +1,24 @@
+# Python virtual environment
+venv/
+env/
+.venv/
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+
+# Datasets (Rất nặng, không push lên Git)
+data/
+*.zip
+*.tar.gz
+
+# Trained Models (Những file quá lớn)
+runs/
+*.pth
+
+# IDE config
+.vscode/
+.idea/
+
+# Streamlit config
+.streamlit/
