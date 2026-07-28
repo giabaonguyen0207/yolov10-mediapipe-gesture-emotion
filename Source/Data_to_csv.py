@@ -4,7 +4,7 @@ import cv2
 import mediapipe as mp
 from tqdm import tqdm
 
-DATASET_DIR = "Dts"          
+DATASET_DIR = "Dts/fane_data"          
 OUTPUT_CSV = "Output/face_landmarks.csv"
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
@@ -70,7 +70,7 @@ def main():
     class_mapping = load_label_id("Class_ID.txt")
     rows_written = 0
     rows_skipped = 0
-
+    os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
     with mp_face_mesh.FaceMesh(
         static_image_mode=True,      # bắt buộc True vì xử lý ảnh tĩnh, không phải xử lí theo thời gian thực
         max_num_faces=1,
