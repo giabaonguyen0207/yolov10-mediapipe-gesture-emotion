@@ -23,15 +23,8 @@ Bộ dữ liệu được lấy từ Kaggle:
 
 Có thể tải trực tiếp bằng thư viện `kagglehub`:
 
-```python
-import kagglehub
-
-# Download latest version
-path = kagglehub.dataset_download(
-    "furcifer/fane-facial-expressions-and-emotion-dataset"
-)
-
-print("Path to dataset files:", path)
+```bash
+kaggle datasets download -d furcifer/fane-facial-expressions-and-emotion-dataset -p ./Dts/ --unzip
 ```
 
 ---
