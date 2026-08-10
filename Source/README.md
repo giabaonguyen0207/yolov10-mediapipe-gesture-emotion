@@ -46,9 +46,10 @@ Ví dụ:
 ```text
 Source/
 │
-├── preprocess.py
+├── Data_to_csv.ipynb
 ├── Output/
 │   └── face_landmarks.csv
+│   └── bar_chart.png
 └── README.md
 ```
 
