@@ -1,9 +1,8 @@
 0: angry
-1: confused
-2: disgust
-3: fear
-4: happy
-5: neutral
-6: sad
-7: shy
-8: surprise
+1: disgust
+2: fear
+3: happy
+4: neutral
+5: sad
+6: shy
+7: surprise
