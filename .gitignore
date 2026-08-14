@@ -24,6 +24,7 @@ data/
 
 # Trained Models (Những file quá lớn)
 runs/
+wandb/
 *.pth
 
 # IDE config
@@ -32,3 +33,7 @@ runs/
 
 # Streamlit config
 .streamlit/
+
+# Temporary
+report.txt
+
