@@ -34,6 +34,6 @@ wandb/
 # Streamlit config
 .streamlit/
 
-# Temporary
-report.txt
-
+# Extracted features and large datasets
+Output/
+*.csv
