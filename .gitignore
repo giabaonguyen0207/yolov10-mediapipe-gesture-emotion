@@ -7,7 +7,7 @@ env/
 __pycache__/
 *.py[cod]
 
-# Datasets (Rất nặng, không push lên Git)
+# Datasets
 data/
 *.zip
 *.tar.gz
@@ -22,7 +22,7 @@ data/
 *.bmp
 *.ico
 
-# Trained Models (Những file quá lớn)
+# Trained Models
 runs/
 *.pth
 
