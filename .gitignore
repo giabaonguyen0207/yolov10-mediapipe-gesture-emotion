@@ -24,6 +24,7 @@ data/
 
 # Trained Models (Những file quá lớn)
 runs/
+wandb/
 *.pth
 
 # IDE config
