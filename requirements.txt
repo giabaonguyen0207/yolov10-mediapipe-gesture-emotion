@@ -8,7 +8,7 @@ pillow==10.2.0
 mediapipe==0.10.9
 
 # --- YOLOv10 & Deep Learning Framework ---
-ultralytics==8.1.34
+ultralytics==8.4.116
 torch==2.1.2
 torchvision==0.16.2
 
