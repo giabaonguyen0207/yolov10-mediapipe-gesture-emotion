@@ -8,7 +8,9 @@ __pycache__/
 *.py[cod]
 
 # Datasets (Rất nặng, không push lên Git)
-data/
+data/raw/
+data/processed/
+!data/README.md
 *.zip
 *.tar.gz
 

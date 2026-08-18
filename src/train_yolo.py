@@ -1,7 +1,7 @@
 import wandb
 from ultralytics import YOLO
 
-DATA = "data/Preprocessed_DTS/data.yaml"
+DATA = "config/data.yaml"
 MODEL = "models/YOLOv10n_gestures.pt"
 
 wandb.init(

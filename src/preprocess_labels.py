@@ -5,8 +5,8 @@ import yaml
 import numpy as np
 from iterstrat.ml_stratifiers import MultilabelStratifiedShuffleSplit
 
-SRC = Path("data/roboflow_raw")
-DST = Path("data/Preprocessed_DTS")
+SRC = Path("data/raw/roboflow_raw")
+DST = Path("data/processed/Preprocessed_DTS")
 
 
 NAME_MAP = {

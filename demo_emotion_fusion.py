@@ -1,7 +1,7 @@
 """Realtime emotion prediction with the EfficientNet-B0 + landmark fusion model.
 
-Place this file next to train_fusion.py, then run for example:
-python realtime_predict.py --checkpoint fusion_model_v2.pt
+Run for example:
+python demo_emotion_fusion.py --checkpoint models/fusion_model_partial.pt
 """
 
 import argparse
@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from train_fusion import (
+from src.train_fusion import (
     DEVICE,
     NUM_LANDMARKS,
     FusionModel,
@@ -27,10 +27,14 @@ from train_fusion import (
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Predict emotion from webcam in real time.")
-    parser.add_argument("--checkpoint", required=True, help="Path to the .pt checkpoint saved by train_fusion.py")
+    parser.add_argument(
+        "--checkpoint",
+        default="models/fusion_model_partial.pt",
+        help="Path to the .pt checkpoint saved by train_fusion.py (default: models/fusion_model_partial.pt)",
+    )
     parser.add_argument(
         "--labels", required=False,
-        help="Comma-separated class names in exactly the same numeric order as the training CSV, e.g. angry,...",
+        help="Comma-separated class names in exactly the same numeric order as the training CSV, e.g. angry,happy,neutral,sad,surprise",
     )
     parser.add_argument("--camera", type=int, default=0, help="Webcam index (default: 0)")
     parser.add_argument("--min_confidence", type=float, default=0.6)
@@ -105,11 +109,20 @@ def main():
     args = parse_args()
     if not 0.0 <= args.ema < 1.0:
         raise ValueError("--ema must be in the range [0, 1).")
-    labels = ["angry","happy","neutral","sad","surprise"]
+    
+    if args.labels:
+        labels = [lbl.strip() for lbl in args.labels.split(",") if lbl.strip()]
+    else:
+        labels = ["angry", "happy", "neutral", "sad", "surprise"]
+        
     model, scaler_mean, scaler_scale, img_size = load_model(args.checkpoint, labels)
     _, transform = build_transforms(img_size)
 
     capture = cv2.VideoCapture(args.camera, cv2.CAP_DSHOW if os.name == "nt" else 0)
+    if not capture.isOpened() and os.name == "nt":
+        # Fallback for Windows if CAP_DSHOW fails to open the camera device
+        capture = cv2.VideoCapture(args.camera)
+
     if not capture.isOpened():
         raise RuntimeError(f"Cannot open camera {args.camera}. Try --camera 1 if another camera is selected.")
 
@@ -144,6 +157,7 @@ def main():
                     cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 220, 0), 2)
                     cv2.putText(frame, text, (x0, max(28, y0 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 220, 0), 2, cv2.LINE_AA)
                 except Exception as error:
+                    print(f"[Prediction Error]: {error}")
                     cv2.putText(frame, f"Prediction error: {error}", (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
             else:
                 smoothed_probs = None
