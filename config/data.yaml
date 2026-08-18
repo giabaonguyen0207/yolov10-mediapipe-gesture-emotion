@@ -1,0 +1,20 @@
+path: data/Preprocessed_DTS
+train: train/images
+val: valid/images
+test: test/images
+nc: 14
+names:
+- call
+- palm
+- stop
+- hand_heart
+- fist
+- middle_finger
+- ok
+- peace
+- point
+- one
+- holy
+- rock
+- dislike
+- like

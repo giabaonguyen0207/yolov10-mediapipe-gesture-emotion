@@ -7,8 +7,15 @@ env/
 __pycache__/
 *.py[cod]
 
+<<<<<<< HEAD
 # Datasets
 data/
+=======
+# Datasets (Rất nặng, không push lên Git)
+data/raw/
+data/processed/
+!data/README.md
+>>>>>>> c865d97df983665dce5eb0dee7c59d512e6ead10
 *.zip
 *.tar.gz
 
@@ -24,6 +31,7 @@ data/
 
 # Trained Models
 runs/
+wandb/
 *.pth
 
 # IDE config
