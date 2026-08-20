@@ -94,7 +94,7 @@ def delete_all(images_list):
 
 @st.dialog("🔍 Xem chi tiết ảnh", width="large")
 def show_full_image(img_path):
-    st.image(img_path, width="stretch")
+    st.image(img_path, use_container_width=True)
 
 @st.dialog("📖 Từ điển Nhãn (Labels Reference)", width="large")
 def show_labels_dictionary():
@@ -128,7 +128,7 @@ def show_history():
             for i, img_path in enumerate(images):
                 with cols[i % 3]:
                     file_name = os.path.basename(img_path)
-                    st.image(img_path, width="stretch")
+                    st.image(img_path, use_container_width=True)
                     st.checkbox(f"Chọn {file_name}", key=f"chk_{img_path}")
                     sub_col1, sub_col2 = st.columns(2)
                     with sub_col1:
@@ -226,7 +226,7 @@ def camera_loop():
         video_placeholder.info("Vui lòng click ô Bật Camera bên trái để bắt đầu nhận diện.")
         return
     
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -255,6 +255,7 @@ def camera_loop():
     cached_raw_gesture = "None"
     cached_hand_conf = 0.0
     cached_hand_box = None
+    cached_face_landmarks = None
 
     while cap.isOpened() and run_camera:
         ret, frame = cap.read()
@@ -269,7 +270,7 @@ def camera_loop():
         frame_count += 1
 
         # A. NHẬN DIỆN CỬ CHỈ TAY (YOLO)
-        if frame_count % 3 == 0:
+        if frame_count % 1 == 0:
             yolo_results = hand_model(frame, conf=conf_threshold, imgsz=320, verbose=False)
             
             if len(yolo_results[0].boxes) > 0:
@@ -293,23 +294,28 @@ def camera_loop():
 
         # B. NHẬN DIỆN CẢM XÚC KHUÔN MẶT
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results_face = face_mesh.process(frame_rgb)
 
-        if results_face.multi_face_landmarks:
+        if frame_count % 1 == 0:  # chỉ chạy Face Mesh mỗi 2 frame
+            results_face = face_mesh.process(frame_rgb)
+            if results_face.multi_face_landmarks:
+                cached_face_landmarks = results_face.multi_face_landmarks[0]
+            else:
+                cached_face_landmarks = None
+
+        if cached_face_landmarks is not None:
             try:
-                if frame_count % 5 == 0:
-                    image_tensor, landmark_tensor, face_box = prepare_inputs(
-                        frame, results_face.multi_face_landmarks[0], scaler_mean, scaler_scale, transform
-                    )
-                    cached_face_box = face_box
-                    
-                    with torch.inference_mode():
-                        logits = emotion_model(image_tensor.to(DEVICE), landmark_tensor.to(DEVICE))
-                        probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
-                    
-                    class_id = int(np.argmax(probs))
-                    cached_raw_emotion = EMOTION_LABELS[class_id]
-                    cached_face_conf = float(probs[class_id])
+                image_tensor, landmark_tensor, face_box = prepare_inputs(
+                    frame, cached_face_landmarks, scaler_mean, scaler_scale, transform
+                )
+                cached_face_box = face_box
+
+                with torch.inference_mode():
+                    logits = emotion_model(image_tensor.to(DEVICE), landmark_tensor.to(DEVICE))
+                    probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
+
+                class_id = int(np.argmax(probs))
+                cached_raw_emotion = EMOTION_LABELS[class_id]
+                cached_face_conf = float(probs[class_id])
             except Exception as e:
                 pass
         else:
@@ -327,7 +333,10 @@ def camera_loop():
                         (f_x0, max(28, f_y0 - 10)), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 0, 0), 2)
                             
         # C. LÀM MƯỢT NHÃN & CẬP NHẬT GIAO DIỆN
-        smoothed_emotion, smoothed_gesture = smoother.update(raw_emotion, raw_gesture)
+        if frame_count % 5 == 0: #Dự đoán cảm xúc và cử chỉ mỗi 5 frame
+            smoothed_emotion, smoothed_gesture = smoother.update(raw_emotion, raw_gesture)
+        else:
+            smoothed_emotion, smoothed_gesture = smoother.update("None", "None")
 
         current_time = time.time()
         if current_time - last_label_time >= time_frame:
@@ -352,8 +361,7 @@ def camera_loop():
             attitude_conf_bar.progress(random.uniform(0.70, 0.90))
 
         # E. TỐI ƯU HIỂN THỊ STREAMLIT
-        if frame_count % 3 == 0:
-            video_placeholder.image(frame_rgb, channels="RGB", width="stretch")
+        video_placeholder.image(frame_rgb, channels="RGB")
 
         if st.session_state.get('take_snapshot'):
             saved_path = save_data(frame_rgb, display_emotion, display_gesture)
