@@ -94,7 +94,7 @@ def delete_all(images_list):
 
 @st.dialog("🔍 Xem chi tiết ảnh", width="large")
 def show_full_image(img_path):
-    st.image(img_path, width="stretch")
+    st.image(img_path, use_container_width=True)
 
 @st.dialog("📖 Từ điển Nhãn (Labels Reference)", width="large")
 def show_labels_dictionary():
@@ -128,7 +128,7 @@ def show_history():
             for i, img_path in enumerate(images):
                 with cols[i % 3]:
                     file_name = os.path.basename(img_path)
-                    st.image(img_path, width="stretch")
+                    st.image(img_path, use_container_width=True)
                     st.checkbox(f"Chọn {file_name}", key=f"chk_{img_path}")
                     sub_col1, sub_col2 = st.columns(2)
                     with sub_col1:
@@ -172,12 +172,38 @@ _, transform = build_transforms(img_size)
 
 EMOTION_LABELS = ["angry", "happy", "neutral", "sad", "surprise"]
 
-run_camera = st.sidebar.checkbox("🟢 Bật Camera")
-
-conf_threshold = st.sidebar.slider(
-    "Ngưỡng nhạy (Confidence Threshold)", 
-    min_value=0.1, max_value=1.0, value=0.5, step=0.05
+run_camera = st.sidebar.checkbox(
+    "🟢 Bật Camera",
+    key="camera_enabled"
 )
+
+if "conf_threshold" not in st.session_state:
+    st.session_state.conf_threshold = 0.5
+if "frame_predict" not in st.session_state:
+    st.session_state.frame_predict = 1
+
+with st.sidebar.form("settings_form"):
+    new_conf_threshold = st.slider(
+        "Ngưỡng nhạy (Confidence Threshold)",
+        min_value=0.1,
+        max_value=1.0,
+        value=st.session_state.conf_threshold,
+        step=0.05
+    )
+    new_frame_predict = st.slider(
+    "Số frame cho mỗi lần predict (frame pe)", 
+    min_value=1, max_value=30, value=1, step=1
+)
+
+    apply_settings = st.form_submit_button("💾 Áp dụng")
+
+if apply_settings:
+    st.session_state.conf_threshold = new_conf_threshold
+    st.session_state.frame_predict = new_frame_predict
+
+conf_threshold = st.session_state.conf_threshold
+frame_predict = st.session_state.frame_predict
+
 
 st.sidebar.markdown("---")
 
@@ -220,26 +246,54 @@ with col2:
     attitude_conf_bar = st.progress(0.0)
 
 # 4. VÒNG LẶP CAMERA & XỬ LÝ AI
+def _release_camera_resources():
+    """Nhả camera + đóng face_mesh, gọi khi tắt checkbox hoặc lúc dọn dẹp."""
+    if "cap" in st.session_state:
+        try:
+            st.session_state.cap.release()
+        except Exception:
+            pass
+        del st.session_state["cap"]
+    if "face_mesh" in st.session_state:
+        try:
+            st.session_state.face_mesh.close()
+        except Exception:
+            pass
+        del st.session_state["face_mesh"]
+    if "smoother" in st.session_state:
+        del st.session_state["smoother"]
+
+
 @st.fragment
 def camera_loop():
     if not run_camera:
+        # Camera đã bị tắt bằng checkbox -> nhả sạch tài nguyên rồi thoát
+        _release_camera_resources()
         video_placeholder.info("Vui lòng click ô Bật Camera bên trái để bắt đầu nhận diện.")
         return
-    
-    cap = cv2.VideoCapture(0)
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    # Chỉ tạo cap/face_mesh/smoother MỘT LẦN, tái sử dụng qua các lần rerun
+    # (đổi conf_threshold, frame_predict... sẽ không làm camera bị mở/đóng lại)
+    if "cap" not in st.session_state:
+        st.session_state.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        st.session_state.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        st.session_state.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    smoother = LabelSmoother(window_size=15)
-    
-    mp_face_mesh = mp.solutions.face_mesh
-    face_mesh = mp_face_mesh.FaceMesh(
-        max_num_faces=1, 
-        refine_landmarks=True,
-        min_detection_confidence=conf_threshold,
-        min_tracking_confidence=conf_threshold
-    )
+    if "face_mesh" not in st.session_state:
+        mp_face_mesh = mp.solutions.face_mesh
+        st.session_state.face_mesh = mp_face_mesh.FaceMesh(
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=conf_threshold,
+            min_tracking_confidence=conf_threshold
+        )
+
+    if "smoother" not in st.session_state:
+        st.session_state.smoother = LabelSmoother(window_size=15)
+
+    cap = st.session_state.cap
+    face_mesh = st.session_state.face_mesh
+    smoother = st.session_state.smoother
 
     time_frame = 1.0
     last_label_time = time.time()
@@ -255,23 +309,27 @@ def camera_loop():
     cached_raw_gesture = "None"
     cached_hand_conf = 0.0
     cached_hand_box = None
+    cached_face_landmarks = None
 
-    while cap.isOpened() and run_camera:
-        ret, frame = cap.read()
-        if not ret:
-            st.error("Lỗi: Không thể kết nối với Webcam!")
-            break
+    # try/finally: đảm bảo nếu Streamlit ngắt ngang vòng lặp này (do rerun từ
+    # 1 widget khác như slider/form nằm ngoài fragment), cap vẫn được xử lý
+    # đúng thay vì bị bỏ dở giữa chừng gây "chiếm" device webcam.
+    try:
+        while cap.isOpened() and run_camera:
+            ret, frame = cap.read()
+            if not ret:
+                st.error("Lỗi: Không thể kết nối với Webcam!")
+                break
             
-        # Ép cứng độ phân giải và lật camera để chống lag trên Mac
-        frame = cv2.resize(frame, (640, 480))
-        frame = cv2.flip(frame, 1)
+            # Ép cứng độ phân giải và lật camera để chống lag trên Mac
+            frame = cv2.resize(frame, (640, 480))
+            frame = cv2.flip(frame, 1)
         
-        frame_count += 1
+            frame_count += 1
 
-        # A. NHẬN DIỆN CỬ CHỈ TAY (YOLO)
-        if frame_count % 3 == 0:
+            # A. NHẬN DIỆN CỬ CHỈ TAY (YOLO)
             yolo_results = hand_model(frame, conf=conf_threshold, imgsz=320, verbose=False)
-            
+    
             if len(yolo_results[0].boxes) > 0:
                 class_id = int(yolo_results[0].boxes.cls[0].item())
                 cached_raw_gesture = hand_model.names[class_id]
@@ -282,84 +340,91 @@ def camera_loop():
                 cached_hand_conf = 0.0
                 cached_hand_box = None
 
-        raw_gesture = cached_raw_gesture
-        real_hand_conf = cached_hand_conf
+            raw_gesture = cached_raw_gesture
+            real_hand_conf = cached_hand_conf
         
-        if cached_hand_box is not None:
-            x_min, y_min, x_max, y_max = int(cached_hand_box[0]), int(cached_hand_box[1]), int(cached_hand_box[2]), int(cached_hand_box[3])
-            cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-            cv2.putText(frame, f"{display_gesture} ({real_hand_conf:.2f})", 
-                        (x_min, max(20, y_min - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            if cached_hand_box is not None:
+                x_min, y_min, x_max, y_max = int(cached_hand_box[0]), int(cached_hand_box[1]), int(cached_hand_box[2]), int(cached_hand_box[3])
+                cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+                cv2.putText(frame, f"{display_gesture} ({real_hand_conf:.2f})", 
+                            (x_min, max(20, y_min - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-        # B. NHẬN DIỆN CẢM XÚC KHUÔN MẶT
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results_face = face_mesh.process(frame_rgb)
+            # B. NHẬN DIỆN CẢM XÚC KHUÔN MẶT
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        if results_face.multi_face_landmarks:
-            try:
-                if frame_count % 5 == 0:
+            results_face = face_mesh.process(frame_rgb)
+            if results_face.multi_face_landmarks:
+                cached_face_landmarks = results_face.multi_face_landmarks[0]
+            else:
+                cached_face_landmarks = None
+
+            if cached_face_landmarks is not None:
+                if frame_count % frame_predict == 0: #Predict mỗi frame_predict frame
                     image_tensor, landmark_tensor, face_box = prepare_inputs(
-                        frame, results_face.multi_face_landmarks[0], scaler_mean, scaler_scale, transform
+                        frame, cached_face_landmarks, scaler_mean, scaler_scale, transform
                     )
                     cached_face_box = face_box
-                    
+
                     with torch.inference_mode():
                         logits = emotion_model(image_tensor.to(DEVICE), landmark_tensor.to(DEVICE))
                         probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
-                    
+
                     class_id = int(np.argmax(probs))
                     cached_raw_emotion = EMOTION_LABELS[class_id]
                     cached_face_conf = float(probs[class_id])
-            except Exception as e:
-                pass
-        else:
-            cached_raw_emotion = "None"
-            cached_face_conf = 0.0
-            cached_face_box = None
+                else: 
+                    pass
             
-        raw_emotion = cached_raw_emotion
-        real_face_conf = cached_face_conf
+            raw_emotion = cached_raw_emotion
+            real_face_conf = cached_face_conf
 
-        if cached_face_box is not None:
-            f_x0, f_y0, f_x1, f_y1 = cached_face_box
-            cv2.rectangle(frame_rgb, (f_x0, f_y0), (f_x1, f_y1), (255, 0, 0), 2)
-            cv2.putText(frame_rgb, f"{display_emotion} ({real_face_conf:.2f})", 
-                        (f_x0, max(28, f_y0 - 10)), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 0, 0), 2)
+            if cached_face_box is not None:
+                f_x0, f_y0, f_x1, f_y1 = cached_face_box
+                cv2.rectangle(frame_rgb, (f_x0, f_y0), (f_x1, f_y1), (255, 0, 0), 2)
+                cv2.putText(frame_rgb, f"{display_emotion} ({real_face_conf:.2f})", 
+                            (f_x0, max(28, f_y0 - 10)), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 0, 0), 2)
                             
-        # C. LÀM MƯỢT NHÃN & CẬP NHẬT GIAO DIỆN
-        smoothed_emotion, smoothed_gesture = smoother.update(raw_emotion, raw_gesture)
+            # C. LÀM MƯỢT NHÃN & CẬP NHẬT GIAO DIỆN
+            smoothed_emotion, smoothed_gesture = smoother.update(raw_emotion, raw_gesture)
 
-        current_time = time.time()
-        if current_time - last_label_time >= time_frame:
-            display_emotion = smoothed_emotion
-            display_gesture = smoothed_gesture
-            last_label_time = current_time
+            current_time = time.time()
+            if current_time - last_label_time >= time_frame:
+                display_emotion = smoothed_emotion
+                display_gesture = smoothed_gesture
+                last_label_time = current_time
 
-            if display_emotion != "Đang chờ..." and display_gesture != "Đang chờ...":
-                display_attitude = get_attitude(display_emotion, display_gesture)
-            else:
-                display_attitude = "Đang chờ dữ liệu..."
+                if display_emotion != "Đang chờ..." and display_gesture != "Đang chờ...":
+                    display_attitude = get_attitude(display_emotion, display_gesture)
+                else:
+                    display_attitude = "Đang chờ dữ liệu..."
 
-            emotion_text.markdown(f"**Nhãn:** {display_emotion}")
-            gesture_text.markdown(f"**Nhãn:** {display_gesture}")
-            attitude_text.markdown(f"**Tổ hợp:** {display_attitude}")
+                emotion_text.markdown(f"**Nhãn:** {display_emotion}")
+                gesture_text.markdown(f"**Nhãn:** {display_gesture}")
+                attitude_text.markdown(f"**Tổ hợp:** {display_attitude}")
             
-            if real_face_conf > 0:
-                face_conf_bar.progress(real_face_conf)
-            if raw_gesture != "None":
-                hand_conf_bar.progress(real_hand_conf)
+                if real_face_conf > 0:
+                    face_conf_bar.progress(real_face_conf)
+                if raw_gesture != "None":
+                    hand_conf_bar.progress(real_hand_conf)
                 
-            attitude_conf_bar.progress(random.uniform(0.70, 0.90))
+                attitude_conf_bar.progress(random.uniform(0.70, 0.90))
 
-        # E. TỐI ƯU HIỂN THỊ STREAMLIT
-        if frame_count % 3 == 0:
-            video_placeholder.image(frame_rgb, channels="RGB", width="stretch")
+            # E. TỐI ƯU HIỂN THỊ STREAMLIT
+            video_placeholder.image(frame_rgb, channels="RGB")
 
-        if st.session_state.get('take_snapshot'):
-            saved_path = save_data(frame_rgb, display_emotion, display_gesture)
-            st.sidebar.success(f"Đã lưu ảnh tại: {saved_path}")
-            st.session_state['take_snapshot'] = False
-            
-    cap.release()
+            if st.session_state.get('take_snapshot'):
+                saved_path = save_data(frame_rgb, display_emotion, display_gesture)
+                st.sidebar.success(f"Đã lưu ảnh tại: {saved_path}")
+                st.session_state['take_snapshot'] = False
+    finally:
+        # Chỉ chạy khi vòng while thoát: hoặc do lỗi đọc frame (break),
+        # hoặc do bị rerun ngắt ngang (settings đổi, tắt checkbox...).
+        # Không release() cứng ở đây nữa để tránh mở/đóng cam liên tục mỗi
+        # lần đổi slider -> cap vẫn sống trong session_state, sẽ được
+        # camera_loop() ở lượt rerun kế tiếp tái sử dụng lại (is not None check ở đầu hàm).
+        # Chỉ thật sự nhả tài nguyên khi checkbox tắt (xử lý ở nhánh `if not run_camera`)
+        # hoặc khi đọc frame lỗi liên tục (device rớt kết nối).
+        if not cap.isOpened():
+            _release_camera_resources()
 
 camera_loop()
