@@ -352,7 +352,7 @@ def camera_loop():
             attitude_conf_bar.progress(random.uniform(0.70, 0.90))
 
         # E. TỐI ƯU HIỂN THỊ STREAMLIT
-        if frame_count % 3 == 0:
+        if frame_count % 1 == 0:
             video_placeholder.image(frame_rgb, channels="RGB", width="stretch")
 
         if st.session_state.get('take_snapshot'):
