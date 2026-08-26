@@ -17,7 +17,7 @@ from ultralytics import YOLO
 
 from docs.attitude import get_attitude, ATTITUDE_MATRIX
 
-from Train_mode.train_fusion import (
+from Train_model.train_fusion import (
     DEVICE,
     NUM_LANDMARKS,
     FusionModel,
