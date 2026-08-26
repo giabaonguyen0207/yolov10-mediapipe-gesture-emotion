@@ -8,33 +8,38 @@ Dự án kết hợp nhận diện cử chỉ tay (Hand Gesture Recognition) b�
 
 ```text
 yolov10-mediapipe-gesture-emotion/
-├── config/                     # File cấu hình (dữ liệu, dataset YAML)
-│   └── data.yaml               # Cấu hình dataset YOLO
+├── config/                      # File cấu hình (dữ liệu, dataset YAML)
+│   └── data.yaml                # Cấu hình dataset YOLO
 │
-├── data/                       # Dữ liệu dự án
-│   ├── raw/                    # Dữ liệu thô (Roboflow, Kaggle datasets)
-│   ├── processed/              # Dữ liệu đã xử lý & gán nhãn
-│   └── README.md               # Mô tả & link các bộ dữ liệu
+data/
+├── emotion/                     # Chứa hình ảnh được tải về từ kaggle
+├── gesture/
+│    ├────raw/                   # Chứa dữ liệu gốc tải về (chưa tiền xử lý)
+│    │    └── roboflow_raw/      # Dataset Roboflow thô
+│    └────processed/             # Dữ liệu đã làm sạch & phân chia train/val/test
+│         └── Preprocessed_DTS/  # Dataset YOLOv10 đã chuẩn hóa
+├── README.md                    # Hướng dẫn quản lý dữ liệu
 │
 ├── docs/                       # Tài liệu hướng dẫn & Workflow
 │   ├── GIT_WORKFLOW.md         # Quy trình làm việc với Git
 │   └── Class_ID.txt            # Danh sách nhãn lớp
+│   └── attitude.py             # Danh sách các nhãn kết hợp
 │
 ├── models/                     # Trọng số mô hình đã huấn luyện (.pt)
 │   ├── fusion_model_partial.pt # Trọng số mô hình Fusion Emotion
 │   ├── hand_yolov10_best.pt    # Trọng số YOLOv10 nhận diện bàn tay
 │   └── YOLOv10n_gestures.pt    # Trọng số YOLOv10 nhận diện cử chỉ
 │
-├── notebooks/                  # Các bài toán thử nghiệm (Jupyter Notebooks)
-│   └── 01_data_to_csv.ipynb    # Trích xuất landmark MediaPipe sang CSV
 │
-├── src/                        # Mã nguồn xử lý & huấn luyện mô hình
+├── Train_model/                # Mã nguồn xử lý & huấn luyện mô hình
+│   ├── Prepare/                # Các bài toán thử nghiệm (Jupyter Notebooks)
+│   │   └── 01_data_to_csv.ipynb # Trích xuất landmark MediaPipe sang CSV
 │   ├── preprocess_labels.py    # Tiền xử lý & làm sạch nhãn YOLO
 │   ├── train_yolo.py           # Pipeline huấn luyện YOLOv10
 │   └── train_fusion.py         # Pipeline huấn luyện Fusion (EfficientNet + Landmark)
 │
-├── demo_emotion_fusion.py      # DEMO 1: Dự đoán Cảm xúc Real-time (Fusion Model)
-├── demo_gesture_yolo.py        # DEMO 2: Nhận diện Cử chỉ tay qua Webcam (YOLOv10)
+├── demo_emotion_predict.py     # DEMO 1: Dự đoán Cảm xúc Real-time (Fusion Model)
+├── demo_gesture_predict.py     # DEMO 2: Nhận diện Cử chỉ tay qua Webcam (YOLOv10)
 ├── requirements.txt            # Danh sách thư viện phụ thuộc
 └── README.md                   # Tài liệu tổng quan dự án
 ```
@@ -44,17 +49,21 @@ yolov10-mediapipe-gesture-emotion/
 ## Hướng dẫn Nhanh
 
 ### 1. Cài đặt môi trường & thư viện
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 2. Chạy Demo 1: Dự đoán Cảm xúc Real-time (Fusion Model)
+
 ```bash
 python demo_emotion_fusion.py
 ```
-*(Tự động nhận diện khuôn mặt qua webcam, trích xuất 478 landmarks và kết hợp ảnh crop mặt để dự đoán cảm xúc: angry, happy, neutral, sad, surprise).*
+
+_(Tự động nhận diện khuôn mặt qua webcam, trích xuất 478 landmarks và kết hợp ảnh crop mặt để dự đoán cảm xúc: angry, happy, neutral, sad, surprise)._
 
 ### 3. Chạy Demo 2: Nhận diện Cử chỉ tay (YOLOv10)
+
 ```bash
 python demo_gesture_yolo.py
 ```
@@ -75,6 +84,7 @@ Chi tiết cấu trúc và cách cài đặt tham khảo thêm tại [data/READM
 ---
 
 ## Công nghệ Sử dụng
+
 - **PyTorch** & **Torchvision**: Xây dựng kiến trúc mô hình Fusion (EfficientNet-B0 + MLP Landmark Encoder).
 - **Ultralytics YOLOv10**: Nhận diện cử chỉ tay với tốc độ cao.
 - **MediaPipe Face Mesh**: Trích xuất 478 điểm mốc khuôn mặt (face landmarks).

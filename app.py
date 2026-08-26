@@ -15,9 +15,9 @@ from smoothing import LabelSmoother
 from pipeline_utils import save_data
 from ultralytics import YOLO
 
-from attitude import get_attitude, ATTITUDE_MATRIX
+from docs.attitude import get_attitude, ATTITUDE_MATRIX
 
-from train_fusion import (
+from Train_mode.train_fusion import (
     DEVICE,
     NUM_LANDMARKS,
     FusionModel,
