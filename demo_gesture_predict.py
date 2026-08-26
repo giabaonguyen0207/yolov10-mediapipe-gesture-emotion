@@ -1,3 +1,8 @@
+"""Realtime gesture prediction with the YOLOv10 model.
+
+Run for example:
+python demo_gesture_predict.py
+"""
 import cv2
 from ultralytics import YOLO
 

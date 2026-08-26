@@ -1,12 +1,11 @@
 import wandb
 from ultralytics import YOLO
 
-DATA = "config/data.yaml"
-MODEL = "models/YOLOv10n_gestures.pt"
+DATA = "../config/data.yaml"
+MODEL = "../models/YOLOv10n_gestures.pt"
 
 wandb.init(
     project="my-awesome-project",
-    entity="huynhnguyenhuyhoang01092007-national-technology",
     name="YOLOv10n-gestures"
 )
 

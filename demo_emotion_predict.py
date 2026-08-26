@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from src.train_fusion import (
+from Train_model.train_fusion import (
     DEVICE,
     NUM_LANDMARKS,
     FusionModel,

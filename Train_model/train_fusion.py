@@ -1,10 +1,9 @@
 """
 Chạy:
-    python train_fusion.py --csv "../../Output/face_landmarks.csv" --dataset_dir "../../Dts/fane_data" --out fusion_model.pt
+    python train_fusion.py --csv "../Output/face_landmarks.csv" --dataset_dir "../data/emotion" --out ../models/fusion_model.pt
 
 Nếu muốn đóng băng phần lớn CNN backbone lúc đầu (khuyên dùng nếu đang overfit nhanh):
-    python train_fusion.py --csv ... --dataset_dir ... --freeze_backbone\
-    python train_fusion.py --csv "../../Output/face_landmarksv2.csv" --dataset_dir "../../Dts/fane_data" --freeze_backbone partial --out fusion_model_v2.pt
+    python train_fusion.py --csv "../Output/face_landmarks.csv" --dataset_dir "../data/emotion" --freeze_backbone partial --out ../models/fusion_model_partial.pt
 """
 
 import argparse
