@@ -1,0 +1,39 @@
+# Python virtual environment
+venv/
+env/
+.venv/
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+
+# Datasets
+data/
+*.zip
+*.tar.gz
+
+# Ảnh
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.svg
+*.webp
+*.bmp
+*.ico
+
+# Trained Models
+runs/
+wandb/
+*.pth
+
+# IDE config
+.vscode/
+.idea/
+
+# Streamlit config
+.streamlit/
+
+# Extracted features and large datasets
+Output/
+*.csv
