@@ -349,7 +349,11 @@ def camera_loop():
             if raw_gesture != "None":
                 hand_conf_bar.progress(real_hand_conf)
                 
-            attitude_conf_bar.progress(random.uniform(0.70, 0.90))
+            if real_face_conf > 0 and raw_gesture != "None":
+                attitude_conf = (real_face_conf + real_hand_conf) / 2.0
+                attitude_conf_bar.progress(float(attitude_conf))
+            else:
+                attitude_conf_bar.progress(0.0)
 
         # E. TỐI ƯU HIỂN THỊ STREAMLIT
         video_placeholder.image(frame_rgb, channels="RGB", width="stretch")
