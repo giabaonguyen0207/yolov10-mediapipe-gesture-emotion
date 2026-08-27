@@ -9,7 +9,7 @@ Nếu muốn đóng băng phần lớn CNN backbone lúc đầu (khuyên dùng n
 import argparse
 import os
 import time
-
+import wandb
 import cv2
 import numpy as np
 import pandas as pd
@@ -295,33 +295,6 @@ class FusionModel(nn.Module):
 
 
 # ----------------------------------------------------------------------------
-# Focal Loss (tuỳ chọn thay CrossEntropyLoss thường)
-#
-# CrossEntropyLoss rải gradient đều cho mọi sample sai (chỉ khác nhau qua
-# class weight). Focal Loss nhân thêm hệ số (1 - p_t)^gamma — sample nào model
-# ĐÃ đoán tự tin đúng (p_t cao) thì gradient bị giảm mạnh, sample khó/hay
-# nhầm (p_t thấp, ví dụ cụm angry/confused/disgust) thì gradient gần như giữ
-# nguyên. Kết quả: model buộc phải tập trung học tốt hơn ở nhóm sample khó
-# thay vì "dễ dãi" trên nhóm đã học tốt rồi.
-# ----------------------------------------------------------------------------
-class FocalLoss(nn.Module):
-    def __init__(self, weight=None, gamma: float = 2.0, label_smoothing: float = 0.0):
-        super().__init__()
-        self.weight = weight
-        self.gamma = gamma
-        self.label_smoothing = label_smoothing
-
-    def forward(self, logits, targets):
-        ce_loss = nn.functional.cross_entropy(
-            logits, targets, weight=self.weight, reduction="none",
-            label_smoothing=self.label_smoothing,
-        )
-        pt = torch.exp(-ce_loss)
-        focal = ((1 - pt) ** self.gamma) * ce_loss
-        return focal.mean()
-
-
-# ----------------------------------------------------------------------------
 # Train / eval loop
 # ----------------------------------------------------------------------------
 def _print_progress(stage, epoch, total_epochs, batch_idx, total_batches, start_time):
@@ -401,7 +374,20 @@ def evaluate(model, loader, criterion, epoch, total_epochs):
 # Main
 # ----------------------------------------------------------------------------
 def main(csv_path, dataset_dir, out_path, freeze_mode, pretrained_cnn, epochs, patience,
-         weight_decay, label_smoothing, loss_type, focal_gamma):
+         weight_decay, label_smoothing):
+    wandb.init(
+        project="emotion-fusion",       # tên project, tự đặt
+        name=f"efficientnet-b0_{freeze_mode}",   # tên run, giúp phân biệt các lần chạy
+        config={
+            "freeze_mode": freeze_mode,
+            "epochs": epochs,
+            "patience": patience,
+            "weight_decay": weight_decay,
+            "label_smoothing": label_smoothing,
+            "loss_type": "CrossEntropyLoss",
+            "batch_size": BATCH_SIZE,
+            "lr": LEARNING_RATE,
+    })
     print(f"Device: {DEVICE}")
 
     # --- Đọc CSV landmark ---
@@ -458,6 +444,7 @@ def main(csv_path, dataset_dir, out_path, freeze_mode, pretrained_cnn, epochs, p
 
     # --- Model + class weight + optimizer ---
     class_counts = np.bincount(y_train)
+    print("Class counts:", class_counts)
     class_weights = len(y_train) / (len(class_counts) * class_counts)
     weights = torch.tensor(class_weights, dtype=torch.float32).to(DEVICE)
     print("Class weights:", class_weights)
@@ -469,12 +456,8 @@ def main(csv_path, dataset_dir, out_path, freeze_mode, pretrained_cnn, epochs, p
     ).to(DEVICE)
     print(f"CNN: EfficientNet-B0 | pretrained = {pretrained_cnn} | freeze_mode = '{freeze_mode}'")
 
-    if loss_type == "focal":
-        criterion = FocalLoss(weight=weights, gamma=focal_gamma, label_smoothing=label_smoothing).to(DEVICE)
-        print(f"Loss: FocalLoss(gamma={focal_gamma}, label_smoothing={label_smoothing})")
-    else:
-        criterion = nn.CrossEntropyLoss(weight=weights, label_smoothing=label_smoothing).to(DEVICE)
-        print(f"Loss: CrossEntropyLoss(label_smoothing={label_smoothing})")
+    criterion = nn.CrossEntropyLoss(weight=weights, label_smoothing=label_smoothing).to(DEVICE)
+    print(f"Loss: CrossEntropyLoss(label_smoothing={label_smoothing})")
 
     optimizer = AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -517,6 +500,15 @@ def main(csv_path, dataset_dir, out_path, freeze_mode, pretrained_cnn, epochs, p
         scheduler.step(val_f1)
 
         current_lr = optimizer.param_groups[0]["lr"]
+        wandb.log({
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+            "val_loss": val_loss,
+            "val_acc": val_acc,
+            "val_macro_f1": val_f1,
+            "lr": current_lr,
+        })
         print(
             f"Epoch {epoch:02d}/{epochs} | "
             f"Train Loss: {train_loss:.4f} Acc: {train_acc:.4f} | "
@@ -548,6 +540,14 @@ def main(csv_path, dataset_dir, out_path, freeze_mode, pretrained_cnn, epochs, p
             preds = logits.argmax(dim=1)
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.numpy())
+            wandb.log({
+            "confusion_matrix": wandb.plot.confusion_matrix(
+                preds=all_preds, y_true=all_labels,
+                class_names=[str(i) for i in range(NUM_CLASSES)],
+            )
+        })
+    wandb.summary["best_val_macro_f1"] = best_f1
+    wandb.finish()
 
     print("\n=== Classification report (test set) ===")
     print(classification_report(all_labels, all_preds, digits=4, zero_division=0))
@@ -575,9 +575,6 @@ if __name__ == "__main__":
                          help="Tăng lên nếu đang overfit (mặc định cũ là 1e-4, đã bump lên 5e-4)")
     parser.add_argument("--label_smoothing", type=float, default=0.1,
                          help="0 để tắt. >0 giúp model bớt tự tin thái quá, thường giảm overfit")
-    parser.add_argument("--loss_type", type=str, default="ce", choices=["ce", "focal"],
-                         help="ce: CrossEntropyLoss thường | focal: FocalLoss, tập trung vào sample khó")
-    parser.add_argument("--focal_gamma", type=float, default=2.0, help="Chỉ dùng khi --loss_type focal")
     args = parser.parse_args()
     main(args.csv, args.dataset_dir, args.out, args.freeze_backbone, args.pretrained_cnn, args.epochs, args.patience,
-         args.weight_decay, args.label_smoothing, args.loss_type, args.focal_gamma)
+         args.weight_decay, args.label_smoothing)
