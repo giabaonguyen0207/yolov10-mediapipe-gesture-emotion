@@ -92,10 +92,6 @@ def delete_all(images_list):
         if os.path.exists(img_path):
             os.remove(img_path)
 
-@st.dialog("🔍 Xem chi tiết ảnh", width="large")
-def show_full_image(img_path):
-    st.image(img_path, width="stretch")
-
 @st.dialog("📖 Từ điển Nhãn (Labels Reference)", width="large")
 def show_labels_dictionary():
     st.markdown("### 1. Khuôn mặt (Emotion) - 5 nhãn")
@@ -110,36 +106,47 @@ def show_labels_dictionary():
     df = pd.DataFrame(ATTITUDE_MATRIX)
     st.dataframe(df, use_container_width=True)
 
+if 'capture_history' not in st.session_state:
+    st.session_state.capture_history = []
+
 @st.dialog("🖼️ Lịch sử chụp", width="large")
 def show_history():
-    if os.path.exists("snapshots"):
-        images = glob.glob("snapshots/*.jpg")
-        images.sort(reverse=True)
+    history = st.session_state.capture_history
+
+    if history:
+        images = [item["path"] for item in history]
         
-        if images:
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                st.button("🗑️ Xoá các ảnh đã chọn", type="primary", on_click=delete_selected, args=(images,))
-            with col_btn2:
-                st.button("🚨 Xoá tất cả ảnh", type="primary", on_click=delete_all, args=(images,))
-            st.markdown("---")
-            
-            cols = st.columns(3)
-            for i, img_path in enumerate(images):
-                with cols[i % 3]:
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            st.button("🗑️ Xoá các ảnh đã chọn", type="primary", on_click=delete_selected, args=(images,))
+        with col_btn2:
+            st.button("🚨 Xoá tất cả ảnh", type="primary", on_click=delete_all, args=(images,))
+        st.markdown("---")
+
+        history_reversed = list(reversed(history))
+        
+        cols = st.columns(3)
+        for i, item in enumerate(history_reversed):
+            img_path = item["path"]
+            with cols[i % 3]:
+                if os.path.exists(img_path):
                     file_name = os.path.basename(img_path)
                     st.image(img_path, width="stretch")
+
+                    st.markdown(f"""
+                    **Cảm xúc:** `{item['emotion']}`  
+                    **Cử chỉ:** `{item['gesture']}`  
+                    **Thái độ:** `{item['attitude']}`
+                    """)
+                    
                     st.checkbox(f"Chọn {file_name}", key=f"chk_{img_path}")
-                    sub_col1, sub_col2 = st.columns(2)
-                    with sub_col1:
-                        if st.button("🔍 Phóng to", key=f"zoom_{img_path}"):
-                            show_full_image(img_path)
-                    with sub_col2:
-                        st.button("❌ Xoá", key=f"del_{img_path}", on_click=delete_single, args=(img_path,))
-        else:
-            st.info("Chưa có bức ảnh nào trong thư viện.")
+                    
+                    # Nút xóa được làm gọn gàng, bỏ nút phóng to đi
+                    st.button("❌ Xoá ảnh này", key=f"del_{img_path}", on_click=delete_single, args=(img_path,), use_container_width=True)
+                else:
+                    st.warning("Ảnh đã bị xóa khỏi thư mục.")
     else:
-        st.info("Thư mục lưu trữ chưa được tạo. Hãy chụp ảnh để hệ thống tự tạo.")
+        st.info("Chưa có bức ảnh nào trong thư viện.")
 
 # 2. XÂY DỰNG SIDEBAR (BẢNG ĐIỀU KHIỂN)
 st.sidebar.header("⚙️ Bảng Điều Khiển")
@@ -232,6 +239,9 @@ def camera_loop():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     smoother = LabelSmoother(window_size=15)
+
+    for _ in range(30):
+        cap.read()
     
     mp_face_mesh = mp.solutions.face_mesh
     face_mesh = mp_face_mesh.FaceMesh(
@@ -246,6 +256,7 @@ def camera_loop():
 
     display_emotion = "Đang chờ..."
     display_gesture = "Đang chờ..."
+    display_attitude = "Đang chờ..."
 
     frame_count = 0
     cached_raw_emotion = "None"
@@ -256,113 +267,130 @@ def camera_loop():
     cached_hand_conf = 0.0
     cached_hand_box = None
 
-    while cap.isOpened() and run_camera:
-        ret, frame = cap.read()
-        if not ret:
-            st.error("Lỗi: Không thể kết nối với Webcam!")
-            break
+    try:
+        while cap.isOpened() and run_camera:
+            ret, frame = cap.read()
+            if not ret:
+                st.error("Lỗi: Không thể kết nối với Webcam!")
+                break
+
+            frame = cv2.resize(frame, (640, 480))
+            frame = cv2.flip(frame, 1)
             
-        # Ép cứng độ phân giải và lật camera để chống lag trên Mac
-        frame = cv2.resize(frame, (640, 480))
-        frame = cv2.flip(frame, 1)
-        
-        frame_count += 1
-
-        # A. NHẬN DIỆN CỬ CHỈ TAY (YOLO)
-        if frame_count % 3 == 0:
-            yolo_results = hand_model(frame, conf=conf_threshold, imgsz=320, verbose=False)
+            clean_frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).copy()
             
-            if len(yolo_results[0].boxes) > 0:
-                class_id = int(yolo_results[0].boxes.cls[0].item())
-                cached_raw_gesture = hand_model.names[class_id]
-                cached_hand_conf = float(yolo_results[0].boxes.conf[0].item())
-                cached_hand_box = yolo_results[0].boxes.xyxy[0].cpu().numpy()
-            else:
-                cached_raw_gesture = "None"
-                cached_hand_conf = 0.0
-                cached_hand_box = None
+            frame_count += 1
 
-        raw_gesture = cached_raw_gesture
-        real_hand_conf = cached_hand_conf
-        
-        if cached_hand_box is not None:
-            x_min, y_min, x_max, y_max = int(cached_hand_box[0]), int(cached_hand_box[1]), int(cached_hand_box[2]), int(cached_hand_box[3])
-            cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-            cv2.putText(frame, f"{display_gesture} ({real_hand_conf:.2f})", 
-                        (x_min, max(20, y_min - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-        # B. NHẬN DIỆN CẢM XÚC KHUÔN MẶT
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results_face = face_mesh.process(frame_rgb)
-
-        if results_face.multi_face_landmarks:
-            try:
-                if frame_count % 5 == 0:
-                    image_tensor, landmark_tensor, face_box = prepare_inputs(
-                        frame, results_face.multi_face_landmarks[0], scaler_mean, scaler_scale, transform
-                    )
-                    cached_face_box = face_box
-                    
-                    with torch.inference_mode():
-                        logits = emotion_model(image_tensor.to(DEVICE), landmark_tensor.to(DEVICE))
-                        probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
-                    
-                    class_id = int(np.argmax(probs))
-                    cached_raw_emotion = EMOTION_LABELS[class_id]
-                    cached_face_conf = float(probs[class_id])
-            except Exception as e:
-                pass
-        else:
-            cached_raw_emotion = "None"
-            cached_face_conf = 0.0
-            cached_face_box = None
-            
-        raw_emotion = cached_raw_emotion
-        real_face_conf = cached_face_conf
-
-        if cached_face_box is not None:
-            f_x0, f_y0, f_x1, f_y1 = cached_face_box
-            cv2.rectangle(frame_rgb, (f_x0, f_y0), (f_x1, f_y1), (255, 0, 0), 2)
-            cv2.putText(frame_rgb, f"{display_emotion} ({real_face_conf:.2f})", 
-                        (f_x0, max(28, f_y0 - 10)), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 0, 0), 2)
-                            
-        # C. LÀM MƯỢT NHÃN & CẬP NHẬT GIAO DIỆN
-        smoothed_emotion, smoothed_gesture = smoother.update(raw_emotion, raw_gesture)
-
-        current_time = time.time()
-        if current_time - last_label_time >= time_frame:
-            display_emotion = smoothed_emotion
-            display_gesture = smoothed_gesture
-            last_label_time = current_time
-
-            if display_emotion != "Đang chờ..." and display_gesture != "Đang chờ...":
-                display_attitude = get_attitude(display_emotion, display_gesture)
-            else:
-                display_attitude = "Đang chờ dữ liệu..."
-
-            emotion_text.markdown(f"**Nhãn:** {display_emotion}")
-            gesture_text.markdown(f"**Nhãn:** {display_gesture}")
-            attitude_text.markdown(f"**Tổ hợp:** {display_attitude}")
-            
-            if real_face_conf > 0:
-                face_conf_bar.progress(real_face_conf)
-            if raw_gesture != "None":
-                hand_conf_bar.progress(real_hand_conf)
+            # A. NHẬN DIỆN CỬ CHỈ TAY (YOLO)
+            if frame_count % 3 == 0:
+                yolo_results = hand_model(frame, conf=conf_threshold, imgsz=320, verbose=False)
                 
-            if real_face_conf > 0 and raw_gesture != "None":
-                attitude_conf = (real_face_conf + real_hand_conf) / 2.0
-                attitude_conf_bar.progress(float(attitude_conf))
-            else:
-                attitude_conf_bar.progress(0.0)
+                if len(yolo_results[0].boxes) > 0:
+                    class_id = int(yolo_results[0].boxes.cls[0].item())
+                    cached_raw_gesture = hand_model.names[class_id]
+                    cached_hand_conf = float(yolo_results[0].boxes.conf[0].item())
+                    cached_hand_box = yolo_results[0].boxes.xyxy[0].cpu().numpy()
+                else:
+                    cached_raw_gesture = "None"
+                    cached_hand_conf = 0.0
+                    cached_hand_box = None
 
-        # E. TỐI ƯU HIỂN THỊ STREAMLIT
-        video_placeholder.image(frame_rgb, channels="RGB", width="stretch")
-
-        if st.session_state.get('take_snapshot'):
-            saved_path = save_data(frame_rgb, display_emotion, display_gesture)
-            st.sidebar.success(f"Đã lưu ảnh tại: {saved_path}")
-            st.session_state['take_snapshot'] = False
+            raw_gesture = cached_raw_gesture
+            real_hand_conf = cached_hand_conf
             
-    cap.release()
+            # YOLO vẽ bounding box tay lên frame gốc
+            if cached_hand_box is not None:
+                x_min, y_min, x_max, y_max = int(cached_hand_box[0]), int(cached_hand_box[1]), int(cached_hand_box[2]), int(cached_hand_box[3])
+                cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+                cv2.putText(frame, f"{display_gesture} ({real_hand_conf:.2f})", 
+                            (x_min, max(20, y_min - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
+            # B. NHẬN DIỆN CẢM XÚC KHUÔN MẶT
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results_face = face_mesh.process(frame_rgb)
+
+            if results_face.multi_face_landmarks:
+                try:
+                    if frame_count % 5 == 0:
+                        image_tensor, landmark_tensor, face_box = prepare_inputs(
+                            frame, results_face.multi_face_landmarks[0], scaler_mean, scaler_scale, transform
+                        )
+                        cached_face_box = face_box
+                        
+                        with torch.inference_mode():
+                            logits = emotion_model(image_tensor.to(DEVICE), landmark_tensor.to(DEVICE))
+                            probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
+                        
+                        class_id = int(np.argmax(probs))
+                        cached_raw_emotion = EMOTION_LABELS[class_id]
+                        cached_face_conf = float(probs[class_id])
+                except Exception as e:
+                    pass
+            else:
+                cached_raw_emotion = "None"
+                cached_face_conf = 0.0
+                cached_face_box = None
+                
+            raw_emotion = cached_raw_emotion
+            real_face_conf = cached_face_conf
+
+            # FaceMesh vẽ bounding box mặt lên frame_rgb
+            if cached_face_box is not None:
+                f_x0, f_y0, f_x1, f_y1 = cached_face_box
+                cv2.rectangle(frame_rgb, (f_x0, f_y0), (f_x1, f_y1), (255, 0, 0), 2)
+                cv2.putText(frame_rgb, f"{display_emotion} ({real_face_conf:.2f})", 
+                            (f_x0, max(28, f_y0 - 10)), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 0, 0), 2)
+                                
+            # C. LÀM MƯỢT NHÃN & CẬP NHẬT GIAO DIỆN
+            smoothed_emotion, smoothed_gesture = smoother.update(raw_emotion, raw_gesture)
+
+            current_time = time.time()
+            if current_time - last_label_time >= time_frame:
+                display_emotion = smoothed_emotion
+                display_gesture = smoothed_gesture
+                last_label_time = current_time
+
+                if display_emotion != "Đang chờ..." and display_gesture != "Đang chờ...":
+                    display_attitude = get_attitude(display_emotion, display_gesture)
+                else:
+                    display_attitude = "Đang chờ dữ liệu..."
+
+                emotion_text.markdown(f"**Nhãn:** {display_emotion}")
+                gesture_text.markdown(f"**Nhãn:** {display_gesture}")
+                attitude_text.markdown(f"**Tổ hợp:** {display_attitude}")
+                
+                if real_face_conf > 0:
+                    face_conf_bar.progress(real_face_conf)
+                if raw_gesture != "None":
+                    hand_conf_bar.progress(real_hand_conf)
+                    
+                if real_face_conf > 0 and raw_gesture != "None":
+                    attitude_conf = (real_face_conf + real_hand_conf) / 2.0
+                    attitude_conf_bar.progress(float(attitude_conf))
+                else:
+                    attitude_conf_bar.progress(0.0)
+
+            # D. TỐI ƯU HIỂN THỊ STREAMLIT 
+            video_placeholder.image(frame_rgb, channels="RGB", width="stretch")
+
+            # E. LƯU ẢNH
+            if st.session_state.get('take_snapshot'):
+                if frame_count > 20:
+                    saved_path = save_data(clean_frame_rgb, display_emotion, display_gesture)
+
+                    st.session_state.capture_history.append({
+                        "path": saved_path,
+                        "emotion": display_emotion,
+                        "gesture": display_gesture,
+                        "attitude": display_attitude
+                    })
+
+                    st.sidebar.success(f"Đã lưu ảnh tại: {saved_path}")
+                    st.session_state['take_snapshot'] = False
+
+    # F. ĐÓNG CHƯƠNG TRÌNH AN TOÀN
+    finally:
+        cap.release()
+        face_mesh.close()
+            
 camera_loop()
