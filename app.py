@@ -140,8 +140,6 @@ def show_history():
                     """)
                     
                     st.checkbox(f"Chọn {file_name}", key=f"chk_{img_path}")
-                    
-                    # Nút xóa được làm gọn gàng, bỏ nút phóng to đi
                     st.button("❌ Xoá ảnh này", key=f"del_{img_path}", on_click=delete_single, args=(img_path,), use_container_width=True)
                 else:
                     st.warning("Ảnh đã bị xóa khỏi thư mục.")
@@ -388,7 +386,7 @@ def camera_loop():
                     st.sidebar.success(f"Đã lưu ảnh tại: {saved_path}")
                     st.session_state['take_snapshot'] = False
 
-    # F. ĐÓNG CHƯƠNG TRÌNH AN TOÀN
+    # F. ĐÓNG CHƯƠNG TRÌNH
     finally:
         cap.release()
         face_mesh.close()
