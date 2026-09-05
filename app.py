@@ -1,3 +1,6 @@
+import os
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
 import streamlit as st
 import cv2
 import pandas as pd
@@ -5,7 +8,6 @@ import time
 from datetime import datetime
 import random 
 import mediapipe as mp
-import os
 import glob
 import torch
 import numpy as np
@@ -231,7 +233,7 @@ def camera_loop():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    smoother = LabelSmoother(window_size=15)
+    smoother = LabelSmoother(window_size=7, decay=0.85)
     
     mp_face_mesh = mp.solutions.face_mesh
     face_mesh = mp_face_mesh.FaceMesh(
@@ -241,7 +243,7 @@ def camera_loop():
         min_tracking_confidence=conf_threshold
     )
 
-    time_frame = 1.0
+    time_frame = 0.1
     last_label_time = time.time()
 
     display_emotion = "Đang chờ..."
@@ -327,7 +329,10 @@ def camera_loop():
                         (f_x0, max(28, f_y0 - 10)), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 0, 0), 2)
                             
         # C. LÀM MƯỢT NHÃN & CẬP NHẬT GIAO DIỆN
-        smoothed_emotion, smoothed_gesture = smoother.update(raw_emotion, raw_gesture)
+        smoothed_emotion, smoothed_gesture = smoother.update(
+            raw_emotion, raw_gesture,
+            emotion_conf=real_face_conf, gesture_conf=real_hand_conf
+        )
 
         current_time = time.time()
         if current_time - last_label_time >= time_frame:
