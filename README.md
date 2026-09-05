@@ -1,91 +1,98 @@
-# YOLOv10 & EfficientNetB0 + MediaPipe Face Mesh Gesture + Emotion Recognition
+# Concurrent Hand Gesture & Facial Emotion Recognition System for Attitude Analysis
 
-Dự án kết hợp nhận diện cử chỉ tay (Hand Gesture Recognition) bằng **YOLOv10** và nhận diện cảm xúc khuôn mặt Real-time (Facial Emotion Recognition) bằng mô hình Fusion giữa **EfficientNet-B0** và **MediaPipe Face Mesh (478 Landmarks)**.
+> **Hệ thống nhận diện đồng thời Cử chỉ tay và Cảm xúc khuôn mặt thời gian thực trên Web (Streamlit) nhằm đánh giá Ma trận Thái độ (Attitude Matrix - 70 trạng thái).**
+
+Dự án phát triển bởi **Nhóm 2 - Machine Learning & IoT Lab (HCMUT)** trong học phần *Machine Learning & Deep Learning*.
 
 ---
 
-## Cấu trúc Thư mục Dự án
+## Cấu Trúc Thư Mục Dự Án
 
 ```text
 yolov10-mediapipe-gesture-emotion/
-├── config/                      # File cấu hình (dữ liệu, dataset YAML)
-│   └── data.yaml                # Cấu hình dataset YOLO
+├── app.py                          # Ứng dụng Web chính (Streamlit Dashboard & Real-time Inference)
+├── smoothing.py                    # Bộ lọc làm mượt nhãn (Label Smoother)
+├── pipeline_utils.py               # Tiện ích chụp snapshot & ghi log dữ liệu
+├── requirements.txt                # Danh sách thư viện phụ thuộc
+├── Dockerfile                      # Cấu hình containerization
 │
-data/
-├── emotion/                     # Chứa hình ảnh được tải về từ kaggle
-├── gesture/
-│    ├────raw/                   # Chứa dữ liệu gốc tải về (chưa tiền xử lý)
-│    │    └── roboflow_raw/      # Dataset Roboflow thô
-│    └────processed/             # Dữ liệu đã làm sạch & phân chia train/val/test
-│         └── Preprocessed_DTS/  # Dataset YOLOv10 đã chuẩn hóa
-├── README.md                    # Hướng dẫn quản lý dữ liệu
+├── models/                         # Trọng số mô hình đã huấn luyện (.pt)
+│   ├── hand_yolov10_best.pt        # Trọng số YOLOv10 fine-tune 14 cử chỉ
+│   ├── fusion_model_partial.pt     # Trọng số Fusion Emotion (EfficientNet-B0 + MLP)
+│   └── YOLOv10n_gestures.pt        # Trọng số gốc pre-trained HaGRID
 │
-├── docs/                       # Tài liệu hướng dẫn & Workflow
-│   ├── GIT_WORKFLOW.md         # Quy trình làm việc với Git
-│   └── Class_ID.txt            # Danh sách nhãn lớp
-│   └── attitude.py             # Danh sách các nhãn kết hợp
+├── Train_model/                    # Mã nguồn huấn luyện & tiền xử lý
+│   ├── train_yolo.py               # Pipeline huấn luyện fine-tune YOLOv10
+│   ├── train_fusion.py             # Pipeline huấn luyện kiến trúc Fusion & Roll Alignment
+│   └── preprocess_labels.py        # Làm sạch và lọc cân bằng nhãn dataset
 │
-├── models/                     # Trọng số mô hình đã huấn luyện (.pt)
-│   ├── fusion_model_partial.pt # Trọng số mô hình Fusion Emotion
-│   ├── hand_yolov10_best.pt    # Trọng số YOLOv10 nhận diện bàn tay
-│   └── YOLOv10n_gestures.pt    # Trọng số YOLOv10 nhận diện cử chỉ
+├── docs/                           # Tài liệu & định nghĩa hệ thống
+│   ├── attitude.py                 # Ma trận 70 trạng thái thái độ (Attitude Lookup Table)
+│   ├── Class_ID.txt                # Danh sách 14 nhãn cử chỉ tay
+│   └── GIT_WORKFLOW.md             # Quy trình phát triển nhóm qua Git
 │
+├── TEMPLATE_PRESENTATION_LAB/      # Mã nguồn LaTeX Beamer báo cáo bảo vệ đồ án
+│   ├── main.tex                    # File slide báo cáo chính (12 slides hoàn chỉnh)
+│   └── beamerthemeMLIOT.sty        # Theme Beamer chuẩn ML IoT Lab HCMUT
 │
-├── Train_model/                # Mã nguồn xử lý & huấn luyện mô hình
-│   ├── Prepare/                # Các bài toán thử nghiệm (Jupyter Notebooks)
-│   │   └── 01_data_to_csv.ipynb # Trích xuất landmark MediaPipe sang CSV
-│   ├── preprocess_labels.py    # Tiền xử lý & làm sạch nhãn YOLO
-│   ├── train_yolo.py           # Pipeline huấn luyện YOLOv10
-│   └── train_fusion.py         # Pipeline huấn luyện Fusion (EfficientNet + Landmark)
-│
-├── demo_emotion_predict.py     # DEMO 1: Dự đoán Cảm xúc Real-time (Fusion Model)
-├── demo_gesture_predict.py     # DEMO 2: Nhận diện Cử chỉ tay qua Webcam (YOLOv10)
-├── requirements.txt            # Danh sách thư viện phụ thuộc
-└── README.md                   # Tài liệu tổng quan dự án
+├── data/                           # Quản lý tập dữ liệu (Emotion & Gesture)
+│   └── README.md                   # Hướng dẫn chi tiết tải & chuẩn bị dataset
+└── README.md                       # Tài liệu tổng quan dự án
 ```
 
 ---
 
-## Hướng dẫn Nhanh
+## Hướng Dẫn Cài Đặt & Chạy Ứng Dụng
 
-### 1. Cài đặt môi trường & thư viện
+### 1. Chuẩn bị môi trường
+Khuyến nghị sử dụng Python 3.10 hoặc 3.11 trong môi trường ảo (venv hoặc conda):
 
 ```bash
+# Tạo môi trường ảo (Conda)
+conda create -n gesture_emotion python=3.10 -y
+conda activate gesture_emotion
+
+# Cài đặt thư viện phụ thuộc
 pip install -r requirements.txt
 ```
 
-### 2. Chạy Demo 1: Dự đoán Cảm xúc Real-time (Fusion Model)
+### 2. Chạy ứng dụng Dashboard Real-Time (Khuyên dùng)
+Khởi chạy toàn bộ hệ thống phát hiện song song trên giao diện Web:
 
 ```bash
-python demo_emotion_fusion.py
+streamlit run app.py
 ```
+*Truy cập đường dẫn cục bộ trên trình duyệt: `http://localhost:8501`*
 
-_(Tự động nhận diện khuôn mặt qua webcam, trích xuất 478 landmarks và kết hợp ảnh crop mặt để dự đoán cảm xúc: angry, happy, neutral, sad, surprise)._
-
-### 3. Chạy Demo 2: Nhận diện Cử chỉ tay (YOLOv10)
-
-```bash
-python demo_gesture_yolo.py
-```
+### 3. Chạy các kịch bản kiểm thử đơn thức (Standalone Scripts)
+- **Nhận diện Cử chỉ tay (YOLOv10):**
+  ```bash
+  python demo_gesture_predict.py
+  ```
+- **Nhận diện Cảm xúc khuôn mặt (Fusion Model):**
+  ```bash
+  python demo_emotion_predict.py
+  ```
 
 ---
 
-## Các Bộ dữ liệu Sử dụng (Datasets)
+## Bộ Dữ Liệu Sử Dụng (Datasets)
 
-1. **Fine-tune YOLOv10 (Hand Gesture Recognition)**:
-   - [Roboflow Common Hand Gestures Emoji v4](https://universe.roboflow.com/eli-juergens-bbemu/common-hand-gestures-emoji/dataset/4)
-
-2. **Huấn luyện Fusion Emotion Model**:
-   - [Facial Emotion Dataset (Kaggle)](https://www.kaggle.com/datasets/himanshuydv11/facial-emotion-dataset)
-   - [Human Emotions Dataset with Real-World Images (Kaggle)](https://www.kaggle.com/datasets/tasneembinmahmood/human-emotions-dataset-with-real-world-images)
-
-Chi tiết cấu trúc và cách cài đặt tham khảo thêm tại [data/README.md](file:///d:/Bao%20Lap%20Trinh%20AI/EE_MLIOT/yolov10-mediapipe-gesture-emotion/data/README.md).
+1. **Cử chỉ tay (Hand Gestures):**
+   - Bộ dữ liệu: [Roboflow Common Hand Gestures (Emoji) v4](https://universe.roboflow.com/eli-juergens-bbemu/common-hand-gestures-emoji/dataset/4).
+   - Lọc nhãn: 1.356 ảnh gốc $\rightarrow$ Lọc cân bằng còn **1.041 ảnh** (Train: 834, Val: 101, Test: 106) trải đều trên 14 cử chỉ: `call`, `palm`, `stop`, `hand_heart`, `fist`, `middle_finger`, `ok`, `peace`, `point`, `one`, `holy`, `rock`, `dislike`, `like`.
+2. **Cảm xúc khuôn mặt (Facial Emotions):**
+   - Kết hợp từ: [Facial Emotion Dataset](https://www.kaggle.com/datasets/himanshuydv11/facial-emotion-dataset) và [Human Emotions Dataset](https://www.kaggle.com/datasets/tasneembinmahmood/human-emotions-dataset-with-real-world-images).
+   - Trích xuất thành công 31.454 / 34.439 ảnh ($91.33\%$) với 5 lớp: `angry`, `happy`, `neutral`, `sad`, `surprise`.
 
 ---
 
-## Công nghệ Sử dụng
+## Thành Viên Nhóm Thực Hiện (Nhóm 2 - MLIOT Lab)
 
-- **PyTorch** & **Torchvision**: Xây dựng kiến trúc mô hình Fusion (EfficientNet-B0 + MLP Landmark Encoder).
-- **Ultralytics YOLOv10**: Nhận diện cử chỉ tay với tốc độ cao.
-- **MediaPipe Face Mesh**: Trích xuất 478 điểm mốc khuôn mặt (face landmarks).
-- **OpenCV & PIL**: Xử lý hình ảnh, xoay chỉnh góc mặt (face alignment) và hiển thị luồng webcam.
+- **Nguyễn Lê Gia Bảo (Lead)** – Email: `bao.nguyenlegia@hcmut.edu.vn`
+- **Dương Gia Bảo**
+- **Huỳnh Nguyễn Huy Hoàng**
+- **Nguyễn Huỳnh Gia Bảo**
+- **Trần Trung Quân**
+
+*Đơn vị: Machine Learning & IoT Lab - Khoa Điện - Điện Tử, Trường Đại học Bách Khoa - ĐHQG TP.HCM.*
